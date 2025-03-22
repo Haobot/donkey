@@ -1180,6 +1180,7 @@ class Arduino:
     TEMP_steering = 0
     TEMP_throttle = 0
     RC_Input = ""
+    mode = "user"
 
     def __init__(self):
         import serial
@@ -1193,15 +1194,15 @@ class Arduino:
         self.steeringCmd = 0
         self.throttleCmd = 0
 
-    def set_cmd(self, channel, val):
-
+    def set_cmd(self, mode, channel, val):
+        self.mode = mode
         if channel == 0:
             self.steeringCmd = val
         elif channel == 1:
             self.throttleCmd = val
             
-        print("Steering: %d, Throttle: %d" % (self.PWM_steering, self.PWM_throttle))
-
+        # print("Steering: %d, Throttle: %d" % (self.PWM_steering, self.PWM_throttle))
+        print("Mode: %s, Steering: %d, Throttle: %d" % (self.mode, self.steeringCmd, self.throttleCmd))
         # with Arduino.ard_lock:
         #     Arduino.ard_device.write(("%d:%d\n" % (self.PWM_steering, self.PWM_throttle)).encode('ascii'))
         # return
@@ -1300,10 +1301,17 @@ class ArdPWMSteering:
 
     def update(self):
         while self.running:
+            # self.controller.RC_Input = self.controller.Arduino_readline()
             if(self.mode != 'user'):
-                self.controller.set_cmd(self.channel, self.angle_val)
+                self.controller.set_cmd(self.mode, self.channel, self.angle_val)
             else:
-                print(self.controller.RC_Input)
+                # print(self.controller.RC_Input)
+                if(self.controller.RC_Input):
+                    print("Mode: %s, Steering: %d, Throttle: %d" % (
+                        self.mode, 
+                        self.controller.RC_Input['steering'], 
+                        self.controller.RC_Input['throttle']
+                    ))
             # if(self.RC_Input != self.TEMP_Input and self.RC_Input != None):
             #     # print(self.RC_Input)
             #     self.TEMP_Input = self.RC_Input
@@ -1328,9 +1336,15 @@ class ArdPWMSteering:
     def run(self, mode, angle):
         self.run_threaded(mode, angle)
         if(self.mode != 'user'):
-            self.controller.set_cmd(self.channel, self.angle_val)
+            self.controller.set_cmd(self.mode, self.channel, self.angle_val)
         else:
-            print(self.controller.RC_Input)
+            # print(self.controller.RC_Input)
+            if(self.controller.RC_Input):
+                                print("Mode: %s, Steering: %d, Throttle: %d" % (
+                                    self.mode, 
+                                    self.controller.RC_Input['steering'], 
+                                    self.controller.RC_Input['throttle']
+                                ))
         # if self.TEMP_ANGLE != self.pulse:
         #     self.controller.set_pwm_pulse(self.channel, self.pulse)
         #     #print('Steering: %s' % self.pulse)
