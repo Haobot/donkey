@@ -1190,17 +1190,16 @@ class Arduino:
             
         self.steering = 0
         self.throttle = 0
-        self.PWM_steering = 0
-        self.PWM_throttle = 0
+        self.steeringCmd = 0
+        self.throttleCmd = 0
 
-    def set_pwm_pulse(self, channel, pulse):
-        #PWM = self.set_pulse(channel, pulse)
+    def set_cmd(self, channel, val):
+
         if channel == 0:
-            self.PWM_steering = pulse
+            self.steeringCmd = val
         elif channel == 1:
-            self.PWM_throttle = pulse
-
-        # if self.PWM_steering != 0 or self.PWM_throttle != 0:  # 仅在有变化时输出
+            self.throttleCmd = val
+            
         print("Steering: %d, Throttle: %d" % (self.PWM_steering, self.PWM_throttle))
 
         # with Arduino.ard_lock:
@@ -1276,29 +1275,35 @@ class ArdPWMSteering:
 
     def __init__(self,
                  controller=None,
-                 left_pulse=-100,
-                 right_pulse=100,
-                 channel=0):
-
-        if controller is None:
-            raise ValueError("PWMSteering requires a set_pulse controller to be passed")
-        set_pwm_pulse = getattr(controller, "set_pwm_pulse", None)
-        if set_pwm_pulse is None or not callable(set_pwm_pulse):
-            raise ValueError("controller must have a set_pulse method")
-
+                 left_val=-100,
+                 right_val=100,
+                 channel=0,
+                 mode='user'):
         self.controller = controller
-        self.left_pulse = left_pulse
-        self.right_pulse = right_pulse
+        self.left_val = left_val
+        self.right_val = right_val
         self.channel = channel
-        self.pulse = dk.utils.map_range(0, self.LEFT_ANGLE, self.RIGHT_ANGLE,
-                                        self.left_pulse, self.right_pulse)
+        self.angle_val = dk.utils.map_range(0, self.LEFT_ANGLE, self.RIGHT_ANGLE,
+                                        self.left_val, self.right_val)
+
+        self.mode = mode
         self.running = True
         print('Arduino PWM Steering created')
 
+        # if controller is None:
+        #     raise ValueError("PWMSteering requires a set_pulse controller to be passed")
+        # set_pwm_pulse = getattr(controller, "set_pwm_pulse", None)
+        # if set_pwm_pulse is None or not callable(set_pwm_pulse):
+        #     raise ValueError("controller must have a set_pulse method")
+
+
+
     def update(self):
         while self.running:
-            self.RC_Input = self.controller.Arduino_readline()
-            self.controller.set_pwm_pulse(self.channel, self.pulse)
+            if(self.mode != 'user'):
+                self.controller.set_cmd(self.channel, self.angle_val)
+            else:
+                print(self.controller.RC_Input)
             # if(self.RC_Input != self.TEMP_Input and self.RC_Input != None):
             #     # print(self.RC_Input)
             #     self.TEMP_Input = self.RC_Input
@@ -1306,33 +1311,26 @@ class ArdPWMSteering:
             #     self.controller.TEMP_steering = self.TEMP_Input['steering']
             #     print(self.controller.TEMP_throttle)
             
-    def run_threaded(self, angle):
+    def run_threaded(self, mode, angle):
+        self.controller.RC_Input = self.controller.Arduino_readline()
+        self.mode = mode
         # Add null check and type validation
         # if angle is None:
         #     # logger.warning("ArdPWMSteering received None angle, using neutral position")
         #     angle = 0.0
         # self.RC_Input = self.controller.Arduino_readline()
-            
-        try:
-            # map absolute angle to angle that vehicle can implement.
-            # angle = self.RC_Input['steering']
-            # self.controller.set_pwm_pulse(self.channel, angle)
-            self.pulse = dk.utils.map_range(angle, self.LEFT_ANGLE, self.RIGHT_ANGLE,
-                                            self.left_pulse, self.right_pulse)
-            # self.controller.set_pwm_pulse(self.channel, self.pulse)
-            
-        
-        except (TypeError, ValueError) as e:
-            logger.error(f"Invalid steering angle type: {type(angle)}, value: {angle}")
-            raise ValueError("Steering angle must be a number") from e
-        # if self.TEMP_ANGLE != self.pulse:
-        #     self.controller.set_pwm_pulse(self.channel, self.pulse)
-        #     self.TEMP_ANGLE = self.pulse
+        if(self.mode != 'user'):
+            self.angle_val = dk.utils.map_range(angle, self.LEFT_ANGLE, self.RIGHT_ANGLE,
+                                                self.left_val, self.right_val)
+
         
 
-    def run(self, angle):
-        self.run_threaded(angle)
-        self.controller.set_pwm_pulse(self.channel, self.pulse)
+    def run(self, mode, angle):
+        self.run_threaded(mode, angle)
+        if(self.mode != 'user'):
+            self.controller.set_cmd(self.channel, self.angle_val)
+        else:
+            print(self.controller.RC_Input)
         # if self.TEMP_ANGLE != self.pulse:
         #     self.controller.set_pwm_pulse(self.channel, self.pulse)
         #     #print('Steering: %s' % self.pulse)
@@ -1340,7 +1338,7 @@ class ArdPWMSteering:
 
     def shutdown(self):
         # set steering straight
-        self.pulse = dk.utils.map_range(0, self.LEFT_ANGLE, self.RIGHT_ANGLE,
+        self.angle_val = dk.utils.map_range(0, self.LEFT_ANGLE, self.RIGHT_ANGLE,
                                         self.left_pulse, self.right_pulse)
         time.sleep(0.3)
         self.running = False
@@ -1362,20 +1360,29 @@ class ArdPWMThrottle:
                  max_pulse=100,
                  min_pulse=-100,
                  zero_pulse=0,
-                 channel=1):
-
-        if controller is None:
-            raise ValueError("PWMThrottle requires a set_pulse controller to be passed")
-        set_pwm_pulse = getattr(controller, "set_pwm_pulse", None)
-        if set_pwm_pulse is None or not callable(set_pwm_pulse):
-            raise ValueError("controller must have a set_pulse method")
-
+                 channel=1,
+                 mode = 'user'):
         self.controller = controller
         self.max_pulse = max_pulse
         self.min_pulse = min_pulse
         self.zero_pulse = zero_pulse
         self.pulse = zero_pulse
         self.channel = channel
+        self.mode = mode
+        self.running = True
+        print('Arduino PWM Throttle created')
+        # if controller is None:
+        #     raise ValueError("PWMThrottle requires a set_pulse controller to be passed")
+        # set_pwm_pulse = getattr(controller, "set_pwm_pulse", None)
+        # if set_pwm_pulse is None or not callable(set_pwm_pulse):
+        #     raise ValueError("controller must have a set_pulse method")
+
+        # self.controller = controller
+        # self.max_pulse = max_pulse
+        # self.min_pulse = min_pulse
+        # self.zero_pulse = zero_pulse
+        # self.pulse = zero_pulse
+        # self.channel = channel
 
         # send zero pulse to calibrate ESC
         # print("Init ESC")
@@ -1385,13 +1392,13 @@ class ArdPWMThrottle:
         # time.sleep(0.01)
         # self.controller.set_pwm_pulse(self.channel,self.zero_pulse)
         # time.sleep(1)
-        self.running = True
+        # self.running = True
         print('Arduino PWM Throttle created')
 
-    def update(self, mode):
+    def update(self):
         while self.running:
             # if self.TEMP_THROTTLE != self.pulse:
-            if(mode != 'user'):
+            if(self.mode != 'user'):
                 self.controller.set_pwm_pulse(self.channel, self.pulse)
                 #time.sleep(0.01) #Need to test
                 # self.TEMP_THROTTLE = self.pulse
@@ -1423,7 +1430,7 @@ class ArdPWMThrottle:
                 else:
                     self.pulse = dk.utils.map_range(throttle, self.MIN_THROTTLE, 0,
                                                 self.min_pulse, self.zero_pulse)
-                # self.controller.set_pwm_pulse(self.channel, self.pulse)
+                self.controller.set_pwm_pulse(self.channel, self.pulse)
             
             except (TypeError, ValueError) as e:
                 logger.error(f"Invalid steering angle type: {type(throttle)}, value: {throttle}")
@@ -1437,7 +1444,7 @@ class ArdPWMThrottle:
         #     #print('throttle: %s' % self.pulse)
         #     self.TEMP_THROTTLE = self.pulse
     def run(self, mode, throttle):
-        self.run_threaded(mode, throttle)
+        # self.run_threaded(throttle)
         if(mode != 'user'):
             self.controller.set_pwm_pulse(self.channel, self.pulse)
         # self.controller.set_pwm_pulse(self.channel, self.pulse)
