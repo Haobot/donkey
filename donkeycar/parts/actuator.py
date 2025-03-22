@@ -1378,21 +1378,21 @@ class ArdPWMThrottle:
         self.channel = channel
 
         # send zero pulse to calibrate ESC
-        print("Init ESC")
-        self.controller.set_pwm_pulse(self.channel,self.max_pulse)
-        time.sleep(0.01)
-        self.controller.set_pwm_pulse(self.channel,self.min_pulse)
-        time.sleep(0.01)
-        self.controller.set_pwm_pulse(self.channel,self.zero_pulse)
-        time.sleep(1)
+        # print("Init ESC")
+        # self.controller.set_pwm_pulse(self.channel,self.max_pulse)
+        # time.sleep(0.01)
+        # self.controller.set_pwm_pulse(self.channel,self.min_pulse)
+        # time.sleep(0.01)
+        # self.controller.set_pwm_pulse(self.channel,self.zero_pulse)
+        # time.sleep(1)
         self.running = True
         print('Arduino PWM Throttle created')
 
-    def update(self):
+    def update(self, mode):
         while self.running:
             # if self.TEMP_THROTTLE != self.pulse:
-            # if(mode != 'user'):
-            self.controller.set_pwm_pulse(self.channel, self.pulse)
+            if(mode != 'user'):
+                self.controller.set_pwm_pulse(self.channel, self.pulse)
                 #time.sleep(0.01) #Need to test
                 # self.TEMP_THROTTLE = self.pulse
 
@@ -1414,19 +1414,20 @@ class ArdPWMThrottle:
     #             logger.error(f"Invalid steering angle type: {type(throttle)}, value: {throttle}")
     #             raise ValueError("Steering angle must be a number") from e
    
-    def run_threaded(self, throttle):
-        try:
-            if throttle > 0:
-                self.pulse = dk.utils.map_range(throttle, 0, self.MAX_THROTTLE,
-                                                self.zero_pulse, self.max_pulse)
-            else:
-                self.pulse = dk.utils.map_range(throttle, self.MIN_THROTTLE, 0,
-                                            self.min_pulse, self.zero_pulse)
-            # self.controller.set_pwm_pulse(self.channel, self.pulse)
-        
-        except (TypeError, ValueError) as e:
-            logger.error(f"Invalid steering angle type: {type(throttle)}, value: {throttle}")
-            raise ValueError("Steering angle must be a number") from e       
+    def run_threaded(self, mode, throttle):
+        if(mode != 'user'):
+            try:
+                if throttle > 0:
+                    self.pulse = dk.utils.map_range(throttle, 0, self.MAX_THROTTLE,
+                                                    self.zero_pulse, self.max_pulse)
+                else:
+                    self.pulse = dk.utils.map_range(throttle, self.MIN_THROTTLE, 0,
+                                                self.min_pulse, self.zero_pulse)
+                # self.controller.set_pwm_pulse(self.channel, self.pulse)
+            
+            except (TypeError, ValueError) as e:
+                logger.error(f"Invalid steering angle type: {type(throttle)}, value: {throttle}")
+                raise ValueError("Steering angle must be a number") from e       
     # def run(self, mode, throttle):
     #     self.run_threaded(mode, throttle)     
     #     if(mode != 'user'):
@@ -1435,9 +1436,11 @@ class ArdPWMThrottle:
         #     self.controller.set_pwm_pulse(self.channel, self.pulse)
         #     #print('throttle: %s' % self.pulse)
         #     self.TEMP_THROTTLE = self.pulse
-    def run(self, throttle):
-        self.run_threaded(throttle)
-        self.controller.set_pwm_pulse(self.channel, self.pulse)
+    def run(self, mode, throttle):
+        self.run_threaded(mode, throttle)
+        if(mode != 'user'):
+            self.controller.set_pwm_pulse(self.channel, self.pulse)
+        # self.controller.set_pwm_pulse(self.channel, self.pulse)
 
     def shutdown(self):
         # stop vehicle
