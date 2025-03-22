@@ -1209,59 +1209,59 @@ class Arduino:
     
     def Arduino_readline(self):
         ret = None
-        with Arduino.ard_lock:
-            if Arduino.ard_device.inWaiting() > 0:
-                ret = Arduino.ard_device.readline().decode('utf-8').strip()
-                
-                # 解析下位机数据格式：M{mode}:P{park} 或 T{throttle}S{steering}
-                if ret.startswith('M') and 'P' in ret:
-                    try:
-                        # 解析模式(M)和手刹状态(P)
-                        import re
-                        match = re.match(r'M(\d+):P(\d+)', ret)
-                        if match:
-                            mode = int(match.group(1))
-                            park = int(match.group(2))
-                            
-                            # 返回模式、手刹状态和默认控制值
-                            return {
-                                'mode': mode,
-                                'park': park,
-                                'throttle': 0,
-                                'steering': 0
-                            }
-                    except Exception as e:
-                        logger.error(f"解析串口数据失败: {ret}, 错误: {str(e)}")
-                elif ret.startswith('T') and 'S' in ret:
-                    try:
-                        # 解析油门(T)和转向(S)
-                        import re
-                        match = re.match(r'T:?(-?\d+):?S:?(-?\d+)', ret)
-                        if match:
-                            raw_throttle = int(match.group(1))
-                            raw_steering = int(match.group(2))
-                            
-                            self.throttle = clamp(raw_throttle, -30, 30)
-                            self.steering = clamp(raw_steering, -100, 100)
-                            
-                            logger.debug(f"解析结果: throttle={self.throttle}(原始:{raw_throttle}) steering={self.steering}(原始:{raw_steering})")
-                            return {
-                                'throttle': self.throttle,
-                                'steering': self.steering,
-                                'mode': 0,
-                                'park': 0
-                            }
-                    except Exception as e:
-                        logger.error(f"解析串口数据失败: {ret}, 错误: {str(e)}")
-                else:
-                    logger.warning(f"收到未识别数据格式: {ret}")
+        # with Arduino.ard_lock: // 去除后系统不卡顿
+        if Arduino.ard_device.inWaiting() > 0:
+            ret = Arduino.ard_device.readline().decode('utf-8').strip()
+            
+            # 解析下位机数据格式：M{mode}:P{park} 或 T{throttle}S{steering}
+            if ret.startswith('M') and 'P' in ret:
+                try:
+                    # 解析模式(M)和手刹状态(P)
+                    import re
+                    match = re.match(r'M(\d+):P(\d+)', ret)
+                    if match:
+                        mode = int(match.group(1))
+                        park = int(match.group(2))
+                        
+                        # 返回模式、手刹状态和默认控制值
+                        return {
+                            'mode': mode,
+                            'park': park,
+                            'throttle': 0,
+                            'steering': 0
+                        }
+                except Exception as e:
+                    logger.error(f"解析串口数据失败: {ret}, 错误: {str(e)}")
+            elif ret.startswith('T') and 'S' in ret:
+                try:
+                    # 解析油门(T)和转向(S)
+                    import re
+                    match = re.match(r'T:?(-?\d+):?S:?(-?\d+)', ret)
+                    if match:
+                        raw_throttle = int(match.group(1))
+                        raw_steering = int(match.group(2))
+                        
+                        self.throttle = clamp(raw_throttle, -30, 30)
+                        self.steering = clamp(raw_steering, -100, 100)
+                        
+                        logger.debug(f"解析结果: throttle={self.throttle}(原始:{raw_throttle}) steering={self.steering}(原始:{raw_steering})")
+                        return {
+                            'throttle': self.throttle,
+                            'steering': self.steering,
+                            'mode': 0,
+                            'park': 0
+                        }
+                except Exception as e:
+                    logger.error(f"解析串口数据失败: {ret}, 错误: {str(e)}")
+            else:
+                logger.warning(f"收到未识别数据格式: {ret}")
 
-        return {
-            'throttle': 0,
-            'steering': 0,
-            'mode': 0,
-            'park': 0
-        }
+        # return {
+        #     'throttle': 0,
+        #     'steering': 0,
+        #     'mode': 0,
+        #     'park': 0
+        # }
 
 
 class ArdPWMSteering:
@@ -1286,9 +1286,10 @@ class ArdPWMSteering:
         self.channel = channel
         self.angle_val = dk.utils.map_range(0, self.LEFT_ANGLE, self.RIGHT_ANGLE,
                                         self.left_val, self.right_val)
-
+        self.CMD_steering = None
         self.mode = mode
         self.running = True
+        self.CMD_Input = None
         print('Arduino PWM Steering created')
 
         # if controller is None:
@@ -1302,16 +1303,22 @@ class ArdPWMSteering:
     def update(self):
         while self.running:
             # self.controller.RC_Input = self.controller.Arduino_readline()
+            self.CMD_Input = self.controller.Arduino_readline()
             if(self.mode != 'user'):
                 self.controller.set_cmd(self.mode, self.channel, self.angle_val)
             else:
-                # print(self.controller.RC_Input)
-                if(self.controller.RC_Input):
+                if(self.CMD_Input):
+                    # print(self.CMD_Input)
+                    self.controller.RC_Input = self.CMD_Input
                     print("Mode: %s, Steering: %d, Throttle: %d" % (
                         self.mode, 
                         self.controller.RC_Input['steering'], 
                         self.controller.RC_Input['throttle']
                     ))
+            #         # self.controller.steeringCmd = self.controller.RC_Input['steering']
+                    self.CMD_steering = self.controller.RC_Input['steering']
+                    # print(self.CMD_steering)
+                    # return self.CMD_steering
             # if(self.RC_Input != self.TEMP_Input and self.RC_Input != None):
             #     # print(self.RC_Input)
             #     self.TEMP_Input = self.RC_Input
@@ -1320,7 +1327,8 @@ class ArdPWMSteering:
             #     print(self.controller.TEMP_throttle)
             
     def run_threaded(self, mode, angle):
-        self.controller.RC_Input = self.controller.Arduino_readline()
+        # self.controller.RC_Input = self.controller.Arduino_readline()
+        # self.CMD_Input = self.controller.Arduino_readline()
         self.mode = mode
         # Add null check and type validation
         # if angle is None:
@@ -1330,7 +1338,23 @@ class ArdPWMSteering:
         if(self.mode != 'user'):
             self.angle_val = dk.utils.map_range(angle, self.LEFT_ANGLE, self.RIGHT_ANGLE,
                                                 self.left_val, self.right_val)
-
+            if(self.controller.steeringCmd):
+                return self.mode, self.controller.steeringCmd
+        else:
+            if(self.CMD_steering):
+                # print(self.CMD_steering)
+                return self.mode, self.CMD_steering
+        #     if(self.CMD_Input):
+        #         # print(self.controller.RC_Input)
+        #         # print("Mode: %s, Steering: %d, Throttle: %d" % (
+        #         #     self.mode, 
+        #         #     self.controller.RC_Input['steering'], 
+        #         #     self.controller.RC_Input['throttle']
+        #         # ))
+        #         # self.controller.steeringCmd = self.controller.RC_Input['steering']
+        #         self.controller.RC_Input = self.CMD_Input
+                # print(self.CMD_steering)
+                # return self.mode, self.CMD_steering
         
 
     def run(self, mode, angle):
