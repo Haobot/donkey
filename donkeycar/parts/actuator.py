@@ -1177,23 +1177,21 @@ class Arduino:
 
     PWM_steering = 0
     PWM_throttle = 0
+    TEMP_steering = 0
+    TEMP_throttle = 0
+    RC_Input = ""
 
-    def __init__(self,  frequency = 60):
+    def __init__(self):
         import serial
         
         if Arduino.ard_device == None:
             Arduino.ard_device = serial.Serial('/dev/ttyS0',115200, timeout= 0.01)
             Arduino.ard_device.setRTS(True)
-        
-        self.frequency = frequency
-        
-        
-    def set_pulse(self, channel, pulse):
-        # Recalculate pulse width from the Adafruit values
-        w = pulse * (1 / (self.frequency * 4096)) # in seconds
-        w *= 1000 * 1000  # in microseconds
-        w = int(w)
-        return w
+            
+        self.steering = 0
+        self.throttle = 0
+        self.PWM_steering = 0
+        self.PWM_throttle = 0
 
     def set_pwm_pulse(self, channel, pulse):
         #PWM = self.set_pulse(channel, pulse)
@@ -1202,49 +1200,68 @@ class Arduino:
         elif channel == 1:
             self.PWM_throttle = pulse
 
-        if self.PWM_steering != 0 or self.PWM_throttle != 0:  # 仅在有变化时输出
-            logger.debug("Steering: %d, Throttle: %d", self.PWM_steering, self.PWM_throttle)
+        # if self.PWM_steering != 0 or self.PWM_throttle != 0:  # 仅在有变化时输出
+        print("Steering: %d, Throttle: %d" % (self.PWM_steering, self.PWM_throttle))
 
-        with Arduino.ard_lock:
-            #Arduino.ard_device.write(("%d:%d\n" % (channel, PWM)).encode('ascii'))
-            Arduino.ard_device.write(("%d:%d\n" % (self.PWM_steering, self.PWM_throttle)).encode('ascii'))
-            
+        # with Arduino.ard_lock:
+        #     Arduino.ard_device.write(("%d:%d\n" % (self.PWM_steering, self.PWM_throttle)).encode('ascii'))
+        # return
+    
     def Arduino_readline(self):
         ret = None
         with Arduino.ard_lock:
             if Arduino.ard_device.inWaiting() > 0:
                 ret = Arduino.ard_device.readline().decode('utf-8').strip()
                 
-                # 解析下位机数据格式：T{throttle}S{steering}
-                if ret.startswith('T') and 'S' in ret:
+                # 解析下位机数据格式：M{mode}:P{park} 或 T{throttle}S{steering}
+                if ret.startswith('M') and 'P' in ret:
                     try:
-                        # 使用正则表达式提取数值
+                        # 解析模式(M)和手刹状态(P)
                         import re
-
-                        # 增强正则表达式兼容性，支持带冒号和不带冒号的格式
-                        # 允许throttle带负号，修正正则表达式
+                        match = re.match(r'M(\d+):P(\d+)', ret)
+                        if match:
+                            mode = int(match.group(1))
+                            park = int(match.group(2))
+                            
+                            # 返回模式、手刹状态和默认控制值
+                            return {
+                                'mode': mode,
+                                'park': park,
+                                'throttle': 0,
+                                'steering': 0
+                            }
+                    except Exception as e:
+                        logger.error(f"解析串口数据失败: {ret}, 错误: {str(e)}")
+                elif ret.startswith('T') and 'S' in ret:
+                    try:
+                        # 解析油门(T)和转向(S)
+                        import re
                         match = re.match(r'T:?(-?\d+):?S:?(-?\d+)', ret)
                         if match:
-                            # 添加带符号的throttle解析和范围校验
-                            # 修复throttle符号处理
                             raw_throttle = int(match.group(1))
                             raw_steering = int(match.group(2))
                             
-                            # 保持原始值范围校验
-                            # 修正throttle范围限制，允许-30到30
                             self.throttle = clamp(raw_throttle, -30, 30)
                             self.steering = clamp(raw_steering, -100, 100)
                             
-                            # 添加符号调试日志
                             logger.debug(f"解析结果: throttle={self.throttle}(原始:{raw_throttle}) steering={self.steering}(原始:{raw_steering})")
-                            # 返回解析后的字典数据
-                            return {'throttle': self.throttle, 'steering': self.steering}
+                            return {
+                                'throttle': self.throttle,
+                                'steering': self.steering,
+                                'mode': 0,
+                                'park': 0
+                            }
                     except Exception as e:
                         logger.error(f"解析串口数据失败: {ret}, 错误: {str(e)}")
                 else:
                     logger.warning(f"收到未识别数据格式: {ret}")
 
-        return {'throttle': 0, 'steering': 0}  # 默认返回中性值
+        return {
+            'throttle': 0,
+            'steering': 0,
+            'mode': 0,
+            'park': 0
+        }
 
 
 class ArdPWMSteering:
@@ -1281,35 +1298,45 @@ class ArdPWMSteering:
     def update(self):
         while self.running:
             self.RC_Input = self.controller.Arduino_readline()
-            if(self.RC_Input != self.TEMP_Input and self.RC_Input != None):
-                # print(self.RC_Input)
-                self.TEMP_Input = self.RC_Input
+            self.controller.set_pwm_pulse(self.channel, self.pulse)
+            # if(self.RC_Input != self.TEMP_Input and self.RC_Input != None):
+            #     # print(self.RC_Input)
+            #     self.TEMP_Input = self.RC_Input
+            #     self.controller.TEMP_throttle = self.TEMP_Input['throttle']
+            #     self.controller.TEMP_steering = self.TEMP_Input['steering']
+            #     print(self.controller.TEMP_throttle)
             
     def run_threaded(self, angle):
         # Add null check and type validation
-        if angle is None:
-            # logger.warning("ArdPWMSteering received None angle, using neutral position")
-            angle = 0.0
+        # if angle is None:
+        #     # logger.warning("ArdPWMSteering received None angle, using neutral position")
+        #     angle = 0.0
+        # self.RC_Input = self.controller.Arduino_readline()
             
         try:
             # map absolute angle to angle that vehicle can implement.
-            angle = float(angle)
-            self.pulse = dk.utils.map_range(angle,
-                                           self.LEFT_ANGLE, self.RIGHT_ANGLE,
-                                           self.left_pulse, self.right_pulse)
+            # angle = self.RC_Input['steering']
+            # self.controller.set_pwm_pulse(self.channel, angle)
+            self.pulse = dk.utils.map_range(angle, self.LEFT_ANGLE, self.RIGHT_ANGLE,
+                                            self.left_pulse, self.right_pulse)
+            # self.controller.set_pwm_pulse(self.channel, self.pulse)
+            
+        
         except (TypeError, ValueError) as e:
             logger.error(f"Invalid steering angle type: {type(angle)}, value: {angle}")
             raise ValueError("Steering angle must be a number") from e
-        if self.TEMP_ANGLE != self.pulse:
-            self.controller.set_pwm_pulse(self.channel, self.pulse)
-            self.TEMP_ANGLE = self.pulse
+        # if self.TEMP_ANGLE != self.pulse:
+        #     self.controller.set_pwm_pulse(self.channel, self.pulse)
+        #     self.TEMP_ANGLE = self.pulse
+        
 
     def run(self, angle):
         self.run_threaded(angle)
-        if self.TEMP_ANGLE != self.pulse:
-            self.controller.set_pwm_pulse(self.channel, self.pulse)
-            #print('Steering: %s' % self.pulse)
-            self.TEMP_ANGLE = self.pulse
+        self.controller.set_pwm_pulse(self.channel, self.pulse)
+        # if self.TEMP_ANGLE != self.pulse:
+        #     self.controller.set_pwm_pulse(self.channel, self.pulse)
+        #     #print('Steering: %s' % self.pulse)
+        #     self.TEMP_ANGLE = self.pulse
 
     def shutdown(self):
         # set steering straight
@@ -1363,25 +1390,54 @@ class ArdPWMThrottle:
 
     def update(self):
         while self.running:
-            if self.TEMP_THROTTLE != self.pulse:
-                self.controller.set_pwm_pulse(self.channel, self.pulse)
-                #time.sleep(0.01) #Need to test
-                self.TEMP_THROTTLE = self.pulse
-
-    def run_threaded(self, throttle):
-        if throttle > 0:
-            self.pulse = dk.utils.map_range(throttle, 0, self.MAX_THROTTLE,
-                                            self.zero_pulse, self.max_pulse)
-        else:
-            self.pulse = dk.utils.map_range(throttle, self.MIN_THROTTLE, 0,
-                                            self.min_pulse, self.zero_pulse)
-    def run(self, throttle):
-        self.run_threaded(throttle)     
-        if self.TEMP_THROTTLE != self.pulse:
+            # if self.TEMP_THROTTLE != self.pulse:
+            # if(mode != 'user'):
             self.controller.set_pwm_pulse(self.channel, self.pulse)
-            #print('throttle: %s' % self.pulse)
-            self.TEMP_THROTTLE = self.pulse
+                #time.sleep(0.01) #Need to test
+                # self.TEMP_THROTTLE = self.pulse
 
+    # def run_threaded(self, mode, throttle):
+    #     # if throttle is None:
+    #     #     # logger.warning("ArdPWMSteering received None angle, using neutral position")
+    #     #     throttle = 0.0
+    #     if(mode != 'user'): 
+    #         try:
+    #             if throttle > 0:
+    #                 self.pulse = dk.utils.map_range(throttle, 0, self.MAX_THROTTLE,
+    #                                                 self.zero_pulse, self.max_pulse)
+    #             else:
+    #                 self.pulse = dk.utils.map_range(throttle, self.MIN_THROTTLE, 0,
+    #                                             self.min_pulse, self.zero_pulse)
+    #             # self.controller.set_pwm_pulse(self.channel, self.pulse)
+            
+    #         except (TypeError, ValueError) as e:
+    #             logger.error(f"Invalid steering angle type: {type(throttle)}, value: {throttle}")
+    #             raise ValueError("Steering angle must be a number") from e
+   
+    def run_threaded(self, throttle):
+        try:
+            if throttle > 0:
+                self.pulse = dk.utils.map_range(throttle, 0, self.MAX_THROTTLE,
+                                                self.zero_pulse, self.max_pulse)
+            else:
+                self.pulse = dk.utils.map_range(throttle, self.MIN_THROTTLE, 0,
+                                            self.min_pulse, self.zero_pulse)
+            # self.controller.set_pwm_pulse(self.channel, self.pulse)
+        
+        except (TypeError, ValueError) as e:
+            logger.error(f"Invalid steering angle type: {type(throttle)}, value: {throttle}")
+            raise ValueError("Steering angle must be a number") from e       
+    # def run(self, mode, throttle):
+    #     self.run_threaded(mode, throttle)     
+    #     if(mode != 'user'):
+    #         self.controller.set_pwm_pulse(self.channel, self.pulse)
+        # if self.TEMP_THROTTLE != self.pulse:
+        #     self.controller.set_pwm_pulse(self.channel, self.pulse)
+        #     #print('throttle: %s' % self.pulse)
+        #     self.TEMP_THROTTLE = self.pulse
+    def run(self, throttle):
+        self.run_threaded(throttle)
+        self.controller.set_pwm_pulse(self.channel, self.pulse)
 
     def shutdown(self):
         # stop vehicle
