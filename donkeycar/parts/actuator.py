@@ -1179,7 +1179,7 @@ class Arduino:
     PWM_throttle = 0
     TEMP_steering = 0
     TEMP_throttle = 0
-    RC_Input = ""
+    Input_RC = ""
     mode = "user"
 
     def __init__(self):
@@ -1270,9 +1270,6 @@ class ArdPWMSteering:
     """
     LEFT_ANGLE = -1
     RIGHT_ANGLE = 1
-    TEMP_ANGLE = 0
-    TEMP_Input = ""
-    RC_Input = ""
 
     def __init__(self,
                  controller=None,
@@ -1286,75 +1283,41 @@ class ArdPWMSteering:
         self.channel = channel
         self.angle_val = dk.utils.map_range(0, self.LEFT_ANGLE, self.RIGHT_ANGLE,
                                         self.left_val, self.right_val)
-        self.CMD_steering = None
         self.mode = mode
         self.running = True
-        self.CMD_Input = None
+        self.Input_Temp = None
+        self.Output_Steering = None
         print('Arduino PWM Steering created')
-
-        # if controller is None:
-        #     raise ValueError("PWMSteering requires a set_pulse controller to be passed")
-        # set_pwm_pulse = getattr(controller, "set_pwm_pulse", None)
-        # if set_pwm_pulse is None or not callable(set_pwm_pulse):
-        #     raise ValueError("controller must have a set_pulse method")
-
 
 
     def update(self):
         while self.running:
-            # self.controller.RC_Input = self.controller.Arduino_readline()
-            self.CMD_Input = self.controller.Arduino_readline()
+            self.Input_Temp = self.controller.Arduino_readline()
             if(self.mode != 'user'):
                 self.controller.set_cmd(self.mode, self.channel, self.angle_val)
             else:
-                if(self.CMD_Input):
-                    # print(self.CMD_Input)
-                    self.controller.RC_Input = self.CMD_Input
+                if(self.Input_Temp):
+                    self.controller.Input_RC = self.Input_Temp
                     print("Mode: %s, Steering: %d, Throttle: %d" % (
                         self.mode, 
-                        self.controller.RC_Input['steering'], 
-                        self.controller.RC_Input['throttle']
+                        self.controller.Input_RC['steering'], 
+                        self.controller.Input_RC['throttle']
                     ))
-            #         # self.controller.steeringCmd = self.controller.RC_Input['steering']
-                    self.CMD_steering = self.controller.RC_Input['steering']
-                    # print(self.CMD_steering)
-                    # return self.CMD_steering
-            # if(self.RC_Input != self.TEMP_Input and self.RC_Input != None):
-            #     # print(self.RC_Input)
-            #     self.TEMP_Input = self.RC_Input
-            #     self.controller.TEMP_throttle = self.TEMP_Input['throttle']
-            #     self.controller.TEMP_steering = self.TEMP_Input['steering']
-            #     print(self.controller.TEMP_throttle)
+                    self.Output_Steering = self.controller.Input_RC['steering']
+
             
     def run_threaded(self, mode, angle):
-        # self.controller.RC_Input = self.controller.Arduino_readline()
-        # self.CMD_Input = self.controller.Arduino_readline()
         self.mode = mode
-        # Add null check and type validation
-        # if angle is None:
-        #     # logger.warning("ArdPWMSteering received None angle, using neutral position")
-        #     angle = 0.0
-        # self.RC_Input = self.controller.Arduino_readline()
         if(self.mode != 'user'):
             self.angle_val = dk.utils.map_range(angle, self.LEFT_ANGLE, self.RIGHT_ANGLE,
                                                 self.left_val, self.right_val)
             if(self.controller.steeringCmd):
                 return self.mode, self.controller.steeringCmd
         else:
-            if(self.CMD_steering):
-                # print(self.CMD_steering)
-                return self.mode, self.CMD_steering
-        #     if(self.CMD_Input):
-        #         # print(self.controller.RC_Input)
-        #         # print("Mode: %s, Steering: %d, Throttle: %d" % (
-        #         #     self.mode, 
-        #         #     self.controller.RC_Input['steering'], 
-        #         #     self.controller.RC_Input['throttle']
-        #         # ))
-        #         # self.controller.steeringCmd = self.controller.RC_Input['steering']
-        #         self.controller.RC_Input = self.CMD_Input
-                # print(self.CMD_steering)
-                # return self.mode, self.CMD_steering
+            if(self.Output_Steering):
+
+                return self.mode, self.Output_Steering
+
         
 
     def run(self, mode, angle):
@@ -1362,17 +1325,12 @@ class ArdPWMSteering:
         if(self.mode != 'user'):
             self.controller.set_cmd(self.mode, self.channel, self.angle_val)
         else:
-            # print(self.controller.RC_Input)
-            if(self.controller.RC_Input):
+            if(self.controller.Input_RC):
                                 print("Mode: %s, Steering: %d, Throttle: %d" % (
                                     self.mode, 
-                                    self.controller.RC_Input['steering'], 
-                                    self.controller.RC_Input['throttle']
+                                    self.controller.Input_RC['steering'], 
+                                    self.controller.Input_RC['throttle']
                                 ))
-        # if self.TEMP_ANGLE != self.pulse:
-        #     self.controller.set_pwm_pulse(self.channel, self.pulse)
-        #     #print('Steering: %s' % self.pulse)
-        #     self.TEMP_ANGLE = self.pulse
 
     def shutdown(self):
         # set steering straight
