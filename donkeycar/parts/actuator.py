@@ -1281,7 +1281,7 @@ class ArdPWMSteering:
         while self.running:
             self.RC_Input = self.controller.Arduino_readline()
             if(self.RC_Input != self.TEMP_Input and self.RC_Input != None):
-                print(self.RC_Input)
+                # print(self.RC_Input)
                 self.TEMP_Input = self.RC_Input
             
     def run_threaded(self, angle):
