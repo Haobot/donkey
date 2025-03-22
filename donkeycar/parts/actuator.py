@@ -1202,7 +1202,8 @@ class Arduino:
         elif channel == 1:
             self.PWM_throttle = pulse
 
-        print("Steering: %d, Throttle: %d" % (self.PWM_steering,self.PWM_throttle))
+        if self.PWM_steering != 0 or self.PWM_throttle != 0:  # 仅在有变化时输出
+            logger.debug("Steering: %d, Throttle: %d", self.PWM_steering, self.PWM_throttle)
 
         with Arduino.ard_lock:
             #Arduino.ard_device.write(("%d:%d\n" % (channel, PWM)).encode('ascii'))
@@ -1287,7 +1288,7 @@ class ArdPWMSteering:
     def run_threaded(self, angle):
         # Add null check and type validation
         if angle is None:
-            logger.warning("ArdPWMSteering received None angle, using neutral position")
+            # logger.warning("ArdPWMSteering received None angle, using neutral position")
             angle = 0.0
             
         try:
