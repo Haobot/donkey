@@ -1287,6 +1287,7 @@ class ArdPWMSteering:
         self.running = True
         self.Input_Temp = None
         self.Output_Steering = None
+        self.Output_Throttle = None
         print('Arduino PWM Steering created')
     def update(self):
         while self.running:
@@ -1303,6 +1304,7 @@ class ArdPWMSteering:
                             self.controller.Input_RC['throttle']
                         ))
                         self.Output_Steering = self.controller.Input_RC['steering']
+                        self.Output_Throttle = self.controller.Input_RC['throttle']
             except Exception as e:
                 logger.error(f"Error in ArdPWMSteering update: {str(e)}")
             time.sleep(0.001) # Need to test
@@ -1313,11 +1315,11 @@ class ArdPWMSteering:
             self.angle_val = dk.utils.map_range(angle, self.LEFT_ANGLE, self.RIGHT_ANGLE,
                                                 self.left_val, self.right_val)
             if(self.controller.steeringCmd):
-                return self.mode, self.controller.steeringCmd
+                return self.mode, self.controller.steeringCmd, self.controller.throttleCmd
         else:
             if(self.Output_Steering):
                 # 需要增加手柄Mode的判断与保存
-                return self.mode, self.Output_Steering
+                return self.mode, self.Output_Steering, self.Output_Throttle
     def run(self, mode, angle):
         self.run_threaded(mode, angle)
         if(self.mode != 'user'):
@@ -1372,21 +1374,22 @@ class ArdPWMThrottle:
     def update(self):
         while self.running:
             try:
+                # self.Input_Temp = 
                 if(self.mode != 'user'):
                     self.controller.set_cmd(self.mode, self.channel, self.throttle_val)
                 else:
                     if(self.Input_Temp):
                         self.controller.Input_RC = self.Input_Temp
-                        # print("Mode: %s, Steering: %d, Throttle: %d" % (
-                        #     self.mode, 
-                        #     self.controller.Input_RC['steering'], 
-                        #     self.controller.Input_RC['throttle']
-                        # ))
+                        print("Mode: %s, Steering: %d, Throttle: %d" % (
+                            self.mode, 
+                            self.controller.Input_RC['steering'], 
+                            self.controller.Input_RC['throttle']
+                        ))
                         self.Output_Thorttle = self.controller.Input_RC['throttle']
             except Exception as e:
                 logger.error(f"Error in ArdPWMThrottle update: {str(e)}")
             time.sleep(0.001) # Need to test
-    def run_threaded(self, mode, throttle):
+    def run_threaded(self, mode, throttle, throttleUser):
         self.mode = mode
         if(self.mode != 'user'):
             try:
@@ -1403,11 +1406,12 @@ class ArdPWMThrottle:
                 logger.error(f"Invalid steering angle type: {type(throttle)}, value: {throttle}")
                 raise ValueError("Steering angle must be a number") from e       
         else:
+            self.Output_Thorttle = throttleUser
             if(self.Output_Thorttle):
                 # 需要增加手柄Mode的判断与保存
                 return self.Output_Thorttle
-    def run(self, mode, throttle):
-        self.run_threaded(throttle)
+    def run(self, mode, throttle, throttleUser):
+        self.run_threaded(mode, throttle, throttleUser)
         # if(mode != 'user'):
         #     self.controller.set_pwm_pulse(self.channel, self.pulse)
         # self.controller.set_pwm_pulse(self.channel, self.pulse)
